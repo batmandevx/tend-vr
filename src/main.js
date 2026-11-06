@@ -84,7 +84,7 @@ class App {
     this.panel.mesh.position.set(0, 0.0, -0.5);
     this.panel.mesh.rotation.x = -0.12;
     this.hud = new Panel(0.52, 0.17);
-    this.hud.mesh.position.set(0, 0.04, -0.66);
+    this.hud.mesh.position.set(0, 0.03, -0.58);
     this.hud.mesh.rotation.x = -0.1;
     this.world.add(this.panel.mesh, this.hud.mesh);
     this.input.add(this.panel); this.input.add(this.hud);
@@ -436,7 +436,7 @@ class App {
     this.show({
       kicker: `${this.profile.sessions.length} sessions · ${this.profile.plants.length} plants · ${store.streak(this.profile)}-day streak`, title: 'Your range over time', titleSize: 48,
       custom: (ctx, W, H, y) => {
-        const x0 = 70, x1 = W - 70, y0 = y + 10, y1 = H - 190;
+        const x0 = 70, x1 = W - 70, y0 = y + 10, y1 = H - 235;
         ctx.strokeStyle = '#e2d8c5'; ctx.lineWidth = 2;
         for (let i = 0; i <= 4; i++) { const yy = y0 + (y1 - y0) * i / 4; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke(); }
         if (S.length < 2) { ctx.fillStyle = THEME.soft; ctx.font = `600 32px ${FONT}`; ctx.fillText('Your chart appears after two sessions.', x0, (y0 + y1) / 2); return; }
@@ -446,7 +446,7 @@ class App {
           let started = false;
           S.forEach((s, i) => { const v = s.metrics[k]; if (v == null) return; const x = x0 + (x1 - x0) * i / (S.length - 1), yy = y1 - (y1 - y0) * Math.min(1, v / max); started ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); started = true; });
           ctx.stroke();
-          ctx.fillStyle = color; ctx.font = `800 28px ${FONT}`; ctx.fillText('● ' + label, x0 + si * 260, y1 + 44);
+          ctx.fillStyle = color; ctx.font = `800 28px ${FONT}`; ctx.fillText('● ' + label, x0 + si * 280, y1 + 42);
         });
       },
       buttons: [{ id: 'home', label: 'Back', primary: true }],
