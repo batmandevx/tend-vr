@@ -39,6 +39,7 @@ class App {
     if (params.has('capture')) {
       // deterministic frame stepping + hi-res frame export, for screenshots and the demo video
       window.__step = (dt) => this.loop(null, dt);
+      window.THREE = THREE;
       window.__size = (w, h) => {
         this.fixedSize = [w, h];
         this.renderer.setPixelRatio(1); this.renderer.setSize(w, h, false);
@@ -94,7 +95,7 @@ class App {
     g.shadowBlur = 24; g.font = '600 86px "Nunito", "Segoe UI", system-ui, sans-serif'; g.fillText('a garden that grows with your hands', 1024, 500);
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     this.title = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
-    this.title.position.set(0, 0.06, -0.95); this.title.renderOrder = 20;
+    this.title.position.set(0, 0.06, -0.95); this.title.renderOrder = 20; this.title.layers.set(5);
     this.world.add(this.title);
   }
   startIntro() {
@@ -152,7 +153,7 @@ class App {
   }
   _initDOM() {
     const el = this.renderer.domElement;
-    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); ray.layers.enable(5);
     el.addEventListener('pointerdown', (e) => {
       this.sound.start();
       if (this.renderer.xr.isPresenting) return;
@@ -617,7 +618,13 @@ class App {
     this.garden.update(dt, xr ? this.renderer.xr.getCamera() : this.camera);
     this.keepsakes.update(dt, H, this.feats, this.state !== 'exercise' && this.state !== 'calib');
     if (this.profile.plants.length !== this._savedPlants && this.state === 'exercise' && now - (this._lastSave || 0) > 4000) { this._lastSave = now; this._savedPlants = this.profile.plants.length; store.save(this.profile); }
-    if (xr) this.renderer.render(this.scene, this.camera); else this.composer.render(dt);
+    if (xr) { this.camera.layers.mask = 1 | (1 << 5); this.renderer.render(this.scene, this.camera); }
+    else {
+      // world through bloom + tone mapping, then UI on top at its true colours
+      this.camera.layers.mask = 1; this.composer.render(dt);
+      const r = this.renderer; r.autoClear = false; r.clearDepth(); this.camera.layers.mask = 1 << 5;
+      r.render(this.scene, this.camera); r.autoClear = true; this.camera.layers.mask = 1;
+    }
   }
 }
 

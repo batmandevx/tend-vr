@@ -34,6 +34,7 @@ export class Panel {
     this.tex.anisotropy = 4;
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, toneMapped: false, depthWrite: false }));
     this.mesh.renderOrder = 10;
+    this.mesh.layers.set(5); // UI layer: drawn after post-processing, never tone-mapped
     this.mesh.userData.panel = this;
     this.buttons = [];
     this.state = null;
