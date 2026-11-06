@@ -422,7 +422,7 @@ export class Garden {
     const leafMat = new THREE.MeshStandardMaterial({ color: '#5aa045', vertexColors: true, side: THREE.DoubleSide, roughness: 0.6 });
     for (let i = 0; i < 2; i++) { const l = new THREE.Mesh(leafGeo, leafMat); l.scale.set(0.035, 0.08, 0.08); l.position.y = 0.05 + i * 0.05; l.rotation.set(-0.5, i * Math.PI + 0.6, 0, 'YXZ'); l.castShadow = true; g.add(l); }
     const head = new THREE.Group(); head.position.y = 0.22; g.add(head);
-    this.heroMat = new THREE.MeshPhysicalMaterial({ color: '#ff8fab', emissive: '#ff5c8a', emissiveIntensity: 0.12, roughness: 0.45, sheen: 1, sheenRoughness: 0.4, sheenColor: new THREE.Color('#fff0f5'), side: THREE.DoubleSide, vertexColors: true });
+    this.heroMat = new THREE.MeshPhysicalMaterial({ color: '#f2668f', emissive: '#e0406f', emissiveIntensity: 0.1, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.5, sheenColor: new THREE.Color('#ffd6e2'), side: THREE.DoubleSide, vertexColors: true });
     const pg = petalGeometry({ cup: 0.42, curlTip: 0.12, segL: 10, segW: 6, base: 0.5 });
     this.heroPetals = [];
     for (let layer = 0; layer < 2; layer++) for (let i = 0; i < (layer ? 6 : 9); i++) {
@@ -445,7 +445,7 @@ export class Garden {
     if (open !== undefined) this.heroOpen = open;
     if (fan !== undefined) this.heroFan = fan;
     if (face !== undefined) this.heroFace = face;
-    if (hue !== undefined) { this.heroMat.color.setHSL(hue, 0.8, 0.74); this.heroMat.emissive.setHSL(hue, 0.9, 0.5); this.heroGlow.material.color.setHSL(hue, 0.9, 0.75); }
+    if (hue !== undefined) { this.heroMat.color.setHSL(hue, 0.78, 0.6); this.heroMat.emissive.setHSL(hue, 0.85, 0.42); this.heroGlow.material.color.setHSL(hue, 0.9, 0.75); }
   }
   pulseHero() { this.heroPulse = 1; }
 
