@@ -8,6 +8,7 @@ import { Sound } from './audio.js';
 import * as store from './store.js';
 import { EXERCISES, ORDER, createRunner } from './exercises.js';
 import { SimHands, Autopilot } from './sim.js';
+import { Keepsakes, mountDrawer } from './keepsakes.js';
 
 const params = new URLSearchParams(location.search);
 const FONT = '"Nunito", "Segoe UI", system-ui, sans-serif';
@@ -27,6 +28,8 @@ class App {
     this._initHands();
     this._initUI();
     this._initDOM();
+    this.keepsakes = new Keepsakes(this);
+    mountDrawer(this.keepsakes);
     this.clock = new THREE.Clock();
     this.renderer.setAnimationLoop((t, frame) => this.loop(frame));
     this.goWelcome();
@@ -73,7 +76,8 @@ class App {
       right: new HandView(this.scene, '#cfe8f3', '#4fa3c7'),
       mirror: new HandView(this.scene, '#ffe2a8', '#f2a541', 0.95),
     };
-    this.feat = createFeatures();
+    this.feats = { left: createFeatures(), right: createFeatures() };
+    this.feat = this.feats.right;
     // target-joint highlight for pinch exercises
     const hl = new THREE.MeshBasicMaterial({ color: '#7fd4ff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false });
     this.highlights = [0, 1, 2, 3].map(() => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.016, 16, 12), hl); m.visible = false; this.scene.add(m); return m; });
@@ -469,7 +473,7 @@ class App {
     this.state = 'about';
     this.show({
       kicker: 'About & safety', title: 'Gentle by design', titleSize: 50, bodySize: 28,
-      body: 'Tend is a wellness companion, not a medical device. Move only within a pain-free range and follow your therapist’s advice. Every goal adapts to your own measured range, and Tend lowers the goal if today is a harder day. Your data never leaves this headset.',
+      body: 'Tend is a wellness companion, not a medical device. Move only within a pain-free range and follow your therapist’s advice. Every goal adapts to your own measured range, and Tend lowers the goal if today is a harder day. Your data never leaves this headset. Tip: turn a photo of something you love into a 3D keepsake with Camera to 3D, then pinch it on your planter to pick it up.',
       buttons: [{ id: 'home', label: 'Back', primary: true }],
     });
   }
@@ -526,7 +530,8 @@ class App {
 
     const H = this.hands;
     const mh = this.measureHand();
-    analyzeHand(mh, this.feat);
+    analyzeHand(H.left, this.feats.left); analyzeHand(H.right, this.feats.right);
+    this.feat = this.feats[mh.handedness];
 
     // mirror therapy: reflect the healthy hand across the body midline
     if (this.mirrorOn) {
@@ -550,6 +555,7 @@ class App {
     }
     if (this.state !== 'exercise' && this.state !== 'paused') this.garden.setHero({ open: 0.75 + Math.sin(now / 1400) * 0.1 });
     this.garden.update(dt);
+    this.keepsakes.update(dt, H, this.feats, this.state !== 'exercise' && this.state !== 'calib');
     if (this.profile.plants.length !== this._savedPlants && this.state === 'exercise' && now - (this._lastSave || 0) > 4000) { this._lastSave = now; this._savedPlants = this.profile.plants.length; store.save(this.profile); }
     this.renderer.render(this.scene, this.camera);
   }

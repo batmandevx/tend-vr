@@ -2,7 +2,7 @@
 
 **Hands-first VR hand rehabilitation for Meta Quest.** Tend turns the repetitive home exercises that follow a stroke, hand injury or arthritis into a calm daily ritual: every gentle movement plants something new, and your garden — your recovery made visible — is still there tomorrow.
 
-▶ **Live (WebXR):** _add your GitHub Pages URL here_ — open it in the Meta Quest Browser and press **Enter VR** (or **Enter MR** to grow the garden on your real table).
+▶ **Live (WebXR):** https://batmandevx.github.io/tend-vr/ — open it in the Meta Quest Browser and press **Enter VR** (or **Enter MR** to grow the garden on your real table).
 No controllers, no account, no install.
 
 ## Why
@@ -26,12 +26,15 @@ No controllers, no account, no install.
 - **Seated & small:** everything happens in a 2-foot bubble over a lap-height planter. Sessions last 3 or 6 minutes. Pauses on its own when your hands leave view, and when the headset is taken off.
 - **Private:** all data stays in the headset's local storage.
 
+**Keepsakes, powered by [Camera to 3D](https://github.com/batmandevx/Auto-Blender-Camera-to-blender):** photograph something you love (a grandchild's toy, a favourite mug) on your phone. Camera to 3D turns it into a textured 3D model on your own Mac, and it appears on your planter's rim. **Pinch it to pick it up** and turn it in your hand, which is itself grip, pinch and wrist-rotation practice. In the 2D page, open **🪴 Keepsakes**, enter your Camera-to-3D server address (e.g. `https://<mac-ip>:8443`, after opening it once in the Quest browser to accept its certificate) and tap a scan. You can also drop in any `.glb` file. Keepsakes are stored on-device (IndexedDB).
+
 **Reasons to come back:** the garden persists and grows. It starts as one planter, and after about 150 reps it spills into the meadow around you. You also get a daily streak and a range-of-motion chart (hand closure %, finger spread °, wrist turn °) across sessions.
 
 ## Tech
 - WebXR + three.js, using the WebXR Hand Input API (25 joints per hand). Works in VR and passthrough MR on Meta Quest.
 - `src/gestures.js` turns joints into scale-normalised measures: per-finger curl, grip, abduction angle, thumb-to-fingertip distances, palm normal.
 - `src/exercises.js` runs the rep state machines with adaptive targets.
+- `src/keepsakes.js` connects to the Camera-to-3D `/scans` API, stores the GLBs in IndexedDB, normalises them onto pedestals, and handles pinch-grab with full hand rotation.
 - Procedural everything: the garden uses instanced meshes (thousands of plants in a few draw calls), audio is synthesised with WebAudio, and there are no downloaded assets.
 - **Desktop simulator:** the same pipeline runs on a procedural 25-joint hand driven by keyboard/mouse. `?demo` (or `?demo=mirror`) has an autopilot play the whole app, which serves as an end-to-end test.
 
