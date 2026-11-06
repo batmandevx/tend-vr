@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { HandState, readXRHands, TIPS } from './hands.js';
 import { analyzeHand, createFeatures, mirrorHand } from './gestures.js';
 import { HandView } from './handview.js';
@@ -31,8 +35,23 @@ class App {
     this.keepsakes = new Keepsakes(this);
     mountDrawer(this.keepsakes);
     this.clock = new THREE.Clock();
-    this.renderer.setAnimationLoop((t, frame) => this.loop(frame));
-    this.goWelcome();
+    this._initTitle();
+    if (params.has('capture')) {
+      // deterministic frame stepping + hi-res frame export, for screenshots and the demo video
+      window.__step = (dt) => this.loop(null, dt);
+      window.__size = (w, h) => {
+        this.fixedSize = [w, h];
+        this.renderer.setPixelRatio(1); this.renderer.setSize(w, h, false);
+        this.composer.setPixelRatio(1); this.composer.setSize(w, h);
+        this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+      };
+      window.__shot = (name, dir = '', type = 'image/png', quality = 0.92) => new Promise((resolve) => {
+        this.loop(null, 0);
+        this.renderer.domElement.toBlob((b) => fetch(`http://localhost:8765/?name=${encodeURIComponent(name)}&dir=${encodeURIComponent(dir)}`, { method: 'POST', body: b }).then(() => resolve(name)), type, quality);
+      });
+    }
+    else this.renderer.setAnimationLoop((t, frame) => this.loop(frame));
+    this.startIntro();
   }
 
   // ---------------- setup ----------------
@@ -41,40 +60,76 @@ class App {
     r.setPixelRatio(Math.min(devicePixelRatio, 2));
     r.setSize(innerWidth, innerHeight);
     r.outputColorSpace = THREE.SRGBColorSpace;
-    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 0.5;
+    r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.xr.enabled = true;
     r.xr.setReferenceSpaceType('local-floor');
     r.xr.setFoveation(0.5);
     document.getElementById('app').appendChild(r.domElement);
-    addEventListener('resize', () => { this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); });
+    addEventListener('resize', () => { if (this.fixedSize) return; this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); this.composer?.setSize(innerWidth, innerHeight); });
   }
   _initScene() {
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog('#e9e6d6', 8, 45);
+    this.scene.fog = new THREE.Fog('#b9cfdc', 18, 90);
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.01, 200);
     this.scene.add(this.camera);
     this.world = new THREE.Group();
     this.scene.add(this.world);
-    this.scene.add(new THREE.HemisphereLight('#fff8e7', '#6d8a5a', 1.6));
-    const sun = new THREE.DirectionalLight('#fff2d6', 1.6); sun.position.set(-2, 4, 1); this.scene.add(sun);
-    this.garden = new Garden(this.world);
+    this.garden = new Garden(this.world, this.renderer, this.scene);
+    // desktop-only bloom (WebXR renders straight to the headset)
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.45, 2.4));
+    this.composer.addPass(new OutputPass());
     this.desktopHead(1.15);
     for (const [variant, hue, seed] of this.profile.plants) this.garden.addPlant(variant, hue, seed, false);
   }
+  // ---------- sunrise opening ----------
+  _initTitle() {
+    const c = document.createElement('canvas'); c.width = 2048; c.height = 640;
+    const g = c.getContext('2d');
+    g.textAlign = 'center'; g.fillStyle = '#fffaf0';
+    g.shadowColor = 'rgba(80,40,10,0.55)'; g.shadowBlur = 40;
+    g.font = '800 300px "Nunito", "Segoe UI", system-ui, sans-serif'; g.fillText('Tend', 1024, 330);
+    g.shadowBlur = 24; g.font = '600 86px "Nunito", "Segoe UI", system-ui, sans-serif'; g.fillText('a garden that grows with your hands', 1024, 500);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    this.title = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+    this.title.position.set(0, 0.06, -0.95); this.title.renderOrder = 20;
+    this.world.add(this.title);
+  }
+  startIntro() {
+    if (params.has('nointro')) { this.goWelcome(); return; }
+    this.intro = { t: 0, rebuilt: 0 };
+    this.state = 'intro0'; this.panel.visible = false; this.hud.visible = false;
+    this.garden.setDaylight(0);
+    this.garden.setHero({ open: 0 });
+  }
+  updateIntro(dt) {
+    const I = this.intro; I.t += dt;
+    const k = THREE.MathUtils.smoothstep(I.t, 0.3, 5.2);
+    this.garden.setDaylight(k, false);
+    const step = Math.floor(k * 4);
+    if (step !== I.rebuilt) { I.rebuilt = step; this.garden._rebuildEnv(); }
+    this.garden.setHero({ open: THREE.MathUtils.smoothstep(I.t, 2.2, 5.5) * 0.85 });
+    if (I.t > 2.6 && !I.chimed) { I.chimed = true; this.sound.chime(4, 0.18); this.garden.sparkles.emit(new THREE.Vector3(0, BED.y + 0.24, BED.z), '#ffd1dc', 50, 0.3); }
+    this.title.material.opacity = THREE.MathUtils.smoothstep(I.t, 1.2, 2.6) * (1 - THREE.MathUtils.smoothstep(I.t, 5.6, 6.6));
+    if (I.t > 6.2) { this.intro = null; this.title.material.opacity = 0; this.garden.setDaylight(1); this.goWelcome(); }
+  }
+
   desktopHead(h) {
     this.world.position.set(0, h, 0); this.world.rotation.set(0, 0, 0);
     this.garden.setFloorY(-h);
-    this.camera.position.set(0, h + 0.12, 0.42);
-    this.camera.lookAt(0, h - 0.27, -0.5);
+    this.camera.position.set(0, h + 0.12, 0.32);
+    this.camera.lookAt(0, h - 0.2, -0.52);
   }
   _initHands() {
     this.real = { left: new HandState('left'), right: new HandState('right') };
     this.sim = { left: new HandState('left'), right: new HandState('right') };
     this.mirror = new HandState('left');
     this.views = {
-      left: new HandView(this.scene, '#cfe8f3', '#4fa3c7'),
-      right: new HandView(this.scene, '#cfe8f3', '#4fa3c7'),
-      mirror: new HandView(this.scene, '#ffe2a8', '#f2a541', 0.95),
+      left: new HandView(this.scene, '#e6f5ff', '#4cc2ff', 0.92),
+      right: new HandView(this.scene, '#e6f5ff', '#4cc2ff', 0.92),
+      mirror: new HandView(this.scene, '#fff1cf', '#ffb03a', 0.92),
     };
     this.feats = { left: createFeatures(), right: createFeatures() };
     this.feat = this.feats.right;
@@ -130,14 +185,16 @@ class App {
       this.mode = kind === 'immersive-ar' ? 'mr' : 'vr';
       this.garden.setMR(this.mode === 'mr');
       this.scene.fog = this.mode === 'mr' ? null : this.scene.fog;
+      this.garden.setGrassDensity(0.55);
       this.renderer.setClearAlpha(this.mode === 'mr' ? 0 : 1);
       await this.renderer.xr.setSession(session);
       this.needsRecenter = true;
+      if (this.state === 'welcome') this.startIntro();
       document.body.classList.add('in-xr');
       session.addEventListener('visibilitychange', () => { if (session.visibilityState !== 'visible' && this.state === 'exercise') this.pause('Paused while you were away.'); });
       session.addEventListener('end', () => {
         document.body.classList.remove('in-xr'); this.mode = 'desktop'; this.garden.setMR(false);
-        this.scene.fog = new THREE.Fog('#e9e6d6', 8, 45); this.desktopHead(1.15);
+        this.scene.fog = new THREE.Fog('#b9cfdc', 18, 90); this.garden.setGrassDensity(1); this.garden.setDaylight(this.garden.daylight); this.desktopHead(1.15);
         if (this.state === 'exercise') this.pause('Paused.');
       });
     } catch (e) { alert('Could not start XR: ' + e.message); }
@@ -415,7 +472,7 @@ class App {
     }
     p.sessions.push({ day: store.dayKey(), t: Date.now(), dur: Math.round(dur), reps: s.reps, plants: s.plants, metrics, adapted: s.adapted });
     store.save(p);
-    this.state = 'summary';
+    this.state = 'summary'; this.summaryT = 0;
     const lines = [];
     const cmp = (k, label, unit, higherBetter = true) => {
       if (metrics[k] == null) return;
@@ -514,13 +571,14 @@ class App {
     if (!pick) return null;
     if (this.state === 'intro' && this.introT < 2.5) return null;
     if (this.state === 'celebrate' && this.celebrateT < 1.8) return null;
+    if (this.state === 'summary' && (this.summaryT || 0) < 5) return null;
     for (const id of pick) if (this.panel.buttons.some((b) => b.id === id)) return { panel: this.panel, id };
     return null;
   }
 
   // ---------------- frame ----------------
-  loop(frame) {
-    const dt = Math.min(0.05, this.clock.getDelta());
+  loop(frame, fixedDt) {
+    const dt = fixedDt ?? Math.min(0.05, this.clock.getDelta());
     const now = performance.now();
     const xr = this.renderer.xr.isPresenting;
     if (xr && frame) {
@@ -547,17 +605,19 @@ class App {
     this.input.update(tips, dt);
 
     switch (this.state) {
+      case 'intro0': this.updateIntro(dt); break;
       case 'calib': this.updateCalib(dt); break;
       case 'exercise': this.updateExercise(dt); break;
       case 'intro': this.introT += dt; break;
       case 'celebrate': this.celebrateT += dt; break;
+      case 'summary': this.summaryT = (this.summaryT || 0) + dt; break;
       case 'paused': if (this.autoPaused && this.feat.valid && (this.pauseSeen += dt) > 1.2) this.resume(); break;
     }
-    if (this.state !== 'exercise' && this.state !== 'paused') this.garden.setHero({ open: 0.75 + Math.sin(now / 1400) * 0.1 });
-    this.garden.update(dt);
+    if (this.state !== 'exercise' && this.state !== 'paused' && this.state !== 'intro0') this.garden.setHero({ open: 0.75 + Math.sin(now / 1400) * 0.1 });
+    this.garden.update(dt, xr ? this.renderer.xr.getCamera() : this.camera);
     this.keepsakes.update(dt, H, this.feats, this.state !== 'exercise' && this.state !== 'calib');
     if (this.profile.plants.length !== this._savedPlants && this.state === 'exercise' && now - (this._lastSave || 0) > 4000) { this._lastSave = now; this._savedPlants = this.profile.plants.length; store.save(this.profile); }
-    this.renderer.render(this.scene, this.camera);
+    if (xr) this.renderer.render(this.scene, this.camera); else this.composer.render(dt);
   }
 }
 

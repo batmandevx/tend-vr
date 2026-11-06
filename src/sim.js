@@ -145,7 +145,7 @@ export class Autopilot {
     sim.setPose('point');
     const b = panel.buttons.find((x) => x.id === id);
     if (!b) return;
-    const W = panel.canvas.width, H = panel.canvas.height;
+    const W = panel.LW, H = panel.LH;
     const local = new THREE.Vector3(((b.x + b.w / 2) / W - 0.5) * panel.w, (0.5 - (b.y + b.h / 2) / H) * panel.h, 0);
     const front = panel.mesh.localToWorld(local.clone().setZ(0.06));
     const through = panel.mesh.localToWorld(local.clone().setZ(-0.02));

@@ -7,9 +7,23 @@ const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3
 
 export class HandView {
   constructor(scene, color, emissive, opacity = 1) {
-    const mat = new THREE.MeshStandardMaterial({
-      color, emissive, emissiveIntensity: 0.55, roughness: 0.45, metalness: 0.0,
-      transparent: opacity < 1, opacity,
+    // Luminous "spirit hand": soft core with a bright fresnel rim, readable against any background.
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { core: { value: new THREE.Color(color) }, rim: { value: new THREE.Color(emissive) }, opacity: { value: opacity } },
+      vertexShader: `varying vec3 vN; varying vec3 vV;
+        void main(){
+          vec4 p = instanceMatrix * vec4(position, 1.0);
+          vec4 mv = modelViewMatrix * p; vV = -mv.xyz;
+          vN = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform vec3 core; uniform vec3 rim; uniform float opacity; varying vec3 vN; varying vec3 vV;
+        void main(){
+          float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
+          vec3 c = mix(core, rim * 1.6, f);
+          gl_FragColor = vec4(c, opacity * mix(0.78, 1.0, f));
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthWrite: true,
     });
     this.joints = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), mat, 25);
     this.bones = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10, 1), mat, BONES.length);

@@ -23,10 +23,11 @@ export function wrap(ctx, text, x, y, maxW, lh) {
 }
 
 export class Panel {
-  constructor(w, h, px = 1024) {
+  constructor(w, h, px = 2048) {
     this.w = w; this.h = h;
     this.canvas = document.createElement('canvas');
     this.canvas.width = px; this.canvas.height = Math.round(px * h / w);
+    this.k = px / 1024; this.LW = 1024; this.LH = this.canvas.height / this.k; // draw in 1024-wide logical units
     this.ctx = this.canvas.getContext('2d');
     this.tex = new THREE.CanvasTexture(this.canvas);
     this.tex.colorSpace = THREE.SRGBColorSpace;
@@ -46,10 +47,17 @@ export class Panel {
 
   draw() {
     const s = this.state; if (!s) return;
-    const { ctx, canvas } = this; const W = canvas.width, H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = s.bg || THEME.bg; rr(ctx, 4, 4, W - 8, H - 8, 44); ctx.fill();
-    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(61,139,90,0.35)'; ctx.stroke();
+    const { ctx } = this; const W = this.LW, H = this.LH;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.setTransform(this.k, 0, 0, this.k, 0, 0);
+    // frosted glass card with soft shadow and a warm top sheen
+    ctx.save(); ctx.shadowColor = 'rgba(40,30,10,0.35)'; ctx.shadowBlur = 22; ctx.shadowOffsetY = 6;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, 'rgba(255,253,247,0.97)'); grad.addColorStop(1, 'rgba(250,243,228,0.95)');
+    ctx.fillStyle = s.bg || grad; rr(ctx, 12, 10, W - 24, H - 28, 40); ctx.fill(); ctx.restore();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; rr(ctx, 13, 11, W - 26, H - 30, 39); ctx.stroke();
+    const band = ctx.createLinearGradient(0, 0, W, 0); band.addColorStop(0, '#3d8b5a'); band.addColorStop(0.5, '#e98fa6'); band.addColorStop(1, '#f2b84b');
+    ctx.save(); rr(ctx, 12, 10, W - 24, H - 28, 40); ctx.clip(); ctx.fillStyle = band; ctx.fillRect(12, 10, W - 24, 7); ctx.restore();
     let y = 92;
     ctx.textBaseline = 'alphabetic';
     if (s.kicker) { ctx.fillStyle = THEME.accent; ctx.font = `800 30px ${FONT}`; ctx.fillText(s.kicker.toUpperCase(), 60, 66); y = 122; }
@@ -71,8 +79,10 @@ export class Panel {
         if (b.rect) [bx, by, bW, bH] = b.rect;
         this.buttons.push({ ...b, x: bx, y: by, w: bW, h: bH });
         const hov = this.hover === b.id;
-        ctx.fillStyle = b.primary ? (hov ? '#2f7a4b' : THEME.accent) : (hov ? '#efe6d4' : '#f6efe1');
-        rr(ctx, bx, by, bW, bH, 30); ctx.fill();
+        ctx.save(); ctx.shadowColor = 'rgba(30,40,20,0.22)'; ctx.shadowBlur = hov ? 18 : 10; ctx.shadowOffsetY = hov ? 2 : 4;
+        if (b.primary) { const bg = ctx.createLinearGradient(0, by, 0, by + bH); bg.addColorStop(0, hov ? '#3a9a60' : '#4aa36c'); bg.addColorStop(1, hov ? '#256e43' : '#2f7a4b'); ctx.fillStyle = bg; }
+        else ctx.fillStyle = hov ? '#efe6d4' : '#fbf6ec';
+        rr(ctx, bx, by, bW, bH, 30); ctx.fill(); ctx.restore();
         ctx.lineWidth = hov ? 8 : 4; ctx.strokeStyle = b.primary ? '#24613b' : 'rgba(36,51,42,0.25)'; ctx.stroke();
         if (hov && this.dwell > 0) { // dwell progress bar
           ctx.fillStyle = b.primary ? 'rgba(255,255,255,0.35)' : 'rgba(61,139,90,0.3)';
@@ -90,7 +100,7 @@ export class Panel {
 
   // uv in [0,1] -> button
   buttonAtUV(u, v) {
-    const x = u * this.canvas.width, y = (1 - v) * this.canvas.height;
+    const x = u * this.LW, y = (1 - v) * this.LH;
     return this.buttons.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null;
   }
   buttonAtLocal(p) { return this.buttonAtUV(p.x / this.w + 0.5, p.y / this.h + 0.5); }
