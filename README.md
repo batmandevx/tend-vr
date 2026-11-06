@@ -143,7 +143,15 @@ Tend connects to our other project, [**Camera to 3D**](https://github.com/batman
 
 Photograph something you love, such as a grandchild's toy, your favourite mug or a medal, and it appears on a stone pedestal on your planter's rim. **Pinch it to pick it up** and turn it in your hand. It follows your hand's full position and rotation. That small act is grip, pinch and wrist-rotation practice wrapped in something personal.
 
-<img src="docs/screenshots/12-keepsake.jpg" width="820" alt="A scanned keepsake on a pedestal beside the planter">
+#### From your phone to your planter
+
+| 1 · Snap it on your phone | 2 · A textured 3D model, made on your Mac | 3 · It appears in your garden |
+|---|---|---|
+| <img src="docs/camera-to-3d/mobile-home.jpg" width="230" alt="Camera to 3D phone capture screen"> <img src="docs/camera-to-3d/mobile-model.jpg" width="230" alt="Doll turned into a 3D model on the phone"> | <img src="docs/camera-to-3d/example-gun-4view.jpg" width="420" alt="Four photos of a toy blaster turned into a textured 3D model"> | <img src="docs/screenshots/12-keepsake.jpg" width="420" alt="The scanned toy blaster on a pedestal beside the Tend planter"> |
+
+<img src="docs/camera-to-3d/desktop-model.jpg" width="820" alt="Camera to 3D desktop view of the finished toy-blaster model">
+
+<sub>Screenshots from <a href="https://github.com/batmandevx/Auto-Blender-Camera-to-blender">Camera to 3D</a>. The toy blaster scanned there is the same model sitting on Tend's planter above.</sub>
 
 **How to add one**
 1. Run Camera to 3D on your Mac and scan an object.
