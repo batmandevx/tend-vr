@@ -2,13 +2,30 @@
 const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
 
 export class Sound {
-  constructor() { this.ctx = null; this.muted = false; this.voice = true; }
+  constructor() { this.ctx = null; this.muted = false; this.voice = true; this.night = false; }
   start() {
     if (this.ctx) { this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain(); this.master.gain.value = 0.6; this.master.connect(this.ctx.destination);
     this._ambient();
+    if (this.night) this._crickets();
+  }
+  setNight(on) { this.night = on; if (on && this.ctx) this._crickets(); }
+  _crickets() {
+    if (this._cricketTimer) return;
+    const chirp = () => {
+      if (!this.night || this.muted || !this.ctx) return;
+      const c = this.ctx, t0 = c.currentTime + Math.random() * 0.2, hz = 4200 + Math.random() * 900;
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null; if (pan) pan.pan.value = Math.random() * 1.6 - 0.8;
+      for (let k = 0; k < 3; k++) {
+        const o = c.createOscillator(), g = c.createGain(), t = t0 + k * 0.055;
+        o.frequency.value = hz; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.012, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+        o.connect(g); (pan ? g.connect(pan) : g).connect(pan ? this.master : this.master); o.start(t); o.stop(t + 0.05);
+      }
+      if (pan) pan.connect(this.master);
+    };
+    this._cricketTimer = setInterval(() => { if (Math.random() < 0.55) chirp(); }, 420);
   }
   _ambient() {
     const c = this.ctx, len = c.sampleRate * 4, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);

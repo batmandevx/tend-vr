@@ -6,7 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { HandState, readXRHands, TIPS } from './hands.js';
 import { analyzeHand, createFeatures, mirrorHand } from './gestures.js';
 import { HandView } from './handview.js';
-import { Garden, BED, VARIANTS } from './garden.js';
+import { Garden, BED, VARIANTS, moodForClock } from './garden.js';
 import { Panel, PanelInput, THEME, wrap } from './ui.js';
 import { Sound } from './audio.js';
 import * as store from './store.js';
@@ -77,6 +77,8 @@ class App {
     this.world = new THREE.Group();
     this.scene.add(this.world);
     this.garden = new Garden(this.world, this.renderer, this.scene);
+    this.applyMood();
+    const cf = this.profile.comfort || { y: 0, z: 0 }; this.garden.setComfort(cf.y, cf.z);
     // desktop-only bloom (WebXR renders straight to the headset)
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -100,6 +102,7 @@ class App {
   }
   startIntro() {
     if (params.has('nointro')) { this.goWelcome(); return; }
+    this.applyMood();
     this.intro = { t: 0, rebuilt: 0 };
     this.state = 'intro0'; this.panel.visible = false; this.hud.visible = false;
     this.garden.setDaylight(0);
@@ -117,8 +120,22 @@ class App {
     if (I.t > 6.2) { this.intro = null; this.title.material.opacity = 0; this.garden.setDaylight(1); this.goWelcome(); }
   }
 
+  // time of day: the user's setting, or their real clock
+  applyMood() {
+    const pick = params.get('mood') || this.profile.mood || 'auto';
+    const m = pick === 'auto' ? moodForClock() : pick;
+    this.garden.setMood(m); this.sound.setNight?.(m === 'night');
+  }
+  // place the world at the head, then apply the user's comfort offset (higher/lower, closer/farther)
+  placeWorld(x, y, z, yaw) {
+    this.base = { x, y, z, yaw };
+    const c = this.profile.comfort || { y: 0, z: 0 };
+    const off = new THREE.Vector3(0, c.y, c.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    this.world.position.set(x + off.x, y + off.y, z + off.z); this.world.rotation.set(0, yaw, 0);
+    this.garden.setComfort(c.y, c.z);
+  }
   desktopHead(h) {
-    this.world.position.set(0, h, 0); this.world.rotation.set(0, 0, 0);
+    this.placeWorld(0, h, 0, 0);
     this.garden.setFloorY(-h);
     this.camera.position.set(0, h + 0.12, 0.32);
     this.camera.lookAt(0, h - 0.2, -0.52);
@@ -209,8 +226,7 @@ class App {
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q); fwd.y = 0;
     const yaw = Math.atan2(-fwd.x, -fwd.z);
     const headY = THREE.MathUtils.clamp(p.y, 0.7, 1.9);
-    this.world.position.set(p.x, headY, p.z);
-    this.world.rotation.set(0, yaw, 0);
+    this.placeWorld(p.x, headY, p.z, yaw);
     this.garden.setFloorY(-headY);
     return true;
   }
@@ -521,10 +537,32 @@ class App {
     this.show({
       kicker: 'Settings', title: 'Make it yours', body: 'Everything stays on this headset. No account, no cloud.', bodySize: 30,
       buttons: [
-        { id: 'set-hand', label: `Hand: ${p.hand}`, size: 34 }, { id: 'set-mirror', label: `Mirror: ${p.mirror ? 'on' : 'off'}`, size: 34 }, { id: 'set-len', label: `Length: ${p.length}`, size: 34 },
-        { id: 'set-calib', label: 'Re-measure', size: 34 }, { id: 'set-voice', label: `Voice: ${this.sound.voice ? 'on' : 'off'}`, size: 34 }, { id: 'home', label: 'Done', primary: true, size: 34 },
-      ], buttonH: 92,
+        { id: 'set-hand', label: `Hand: ${p.hand}`, size: 30 }, { id: 'set-mirror', label: `Mirror: ${p.mirror ? 'on' : 'off'}`, size: 30 }, { id: 'set-len', label: `Length: ${p.length}`, size: 30 }, { id: 'set-sky', label: `Sky: ${p.mood || 'auto'}`, size: 30 },
+        { id: 'set-calib', label: 'Re-measure', size: 30 }, { id: 'set-voice', label: `Voice: ${this.sound.voice ? 'on' : 'off'}`, size: 30 }, { id: 'set-comfort', label: 'Move garden', size: 30 }, { id: 'home', label: 'Done', primary: true, size: 30 },
+      ], buttonH: 84,
     });
+  }
+
+  goComfort() {
+    this.state = 'comfort';
+    const c = this.profile.comfort || { y: 0, z: 0 };
+    const cm = (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} cm`;
+    this.show({
+      kicker: 'Comfort', title: 'Move the garden', bodySize: 30,
+      body: `Raise, lower, or bring the planter closer so your hands rest easily — for any chair or wheelchair. Height ${cm(c.y)} · distance ${cm(c.z)}`,
+      buttons: [
+        { id: 'cf-up', label: 'Raise', size: 32 }, { id: 'cf-down', label: 'Lower', size: 32 }, { id: 'cf-near', label: 'Closer', size: 32 },
+        { id: 'cf-far', label: 'Farther', size: 32 }, { id: 'cf-reset', label: 'Reset', size: 32 }, { id: 'settings', label: 'Done', primary: true, size: 32 },
+      ], buttonH: 84,
+    });
+  }
+  nudgeComfort(dy, dz) {
+    const c = this.profile.comfort || { y: 0, z: 0 };
+    c.y = THREE.MathUtils.clamp(c.y + dy, -0.25, 0.2); c.z = THREE.MathUtils.clamp(c.z + dz, -0.15, 0.2);
+    if (dy === 0 && dz === 0) { c.y = 0; c.z = 0; }
+    this.profile.comfort = c; store.save(this.profile);
+    if (this.base) this.placeWorld(this.base.x, this.base.y, this.base.z, this.base.yaw);
+    this.goComfort();
   }
 
   goAbout() {
@@ -561,6 +599,13 @@ class App {
       case 'set-hand': p.hand = { left: 'right', right: 'both', both: 'left' }[p.hand]; store.save(p); return this.goSettings();
       case 'set-mirror': p.mirror = !p.mirror; store.save(p); return this.goSettings();
       case 'set-len': p.length = p.length === 'quick' ? 'full' : 'quick'; store.save(p); return this.goSettings();
+      case 'set-sky': { const order = ['auto', 'morning', 'day', 'sunset', 'night']; p.mood = order[(order.indexOf(p.mood || 'auto') + 1) % order.length]; store.save(p); this.applyMood(); return this.goSettings(); }
+      case 'set-comfort': return this.goComfort();
+      case 'cf-up': return this.nudgeComfort(0.05, 0);
+      case 'cf-down': return this.nudgeComfort(-0.05, 0);
+      case 'cf-near': return this.nudgeComfort(0, 0.05);
+      case 'cf-far': return this.nudgeComfort(0, -0.05);
+      case 'cf-reset': return this.nudgeComfort(0, 0);
       case 'set-voice': this.sound.voice = !this.sound.voice; p.voice = this.sound.voice; store.save(p); return this.goSettings();
       case 'set-calib': return this.goCalib();
     }

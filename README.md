@@ -120,6 +120,7 @@ Most fitness apps assume a healthy body and measure you against it. Tend does th
 - **Never-fail adaptation (in the moment).** If you're clearly trying, reaching at least about 55% of the goal for 7 seconds, Tend quietly lowers the goal and tells you kindly: *"That's your range today, and that's perfect. I've moved the goal to meet you."* Fireflies drift closer if they're out of reach. Pinch targets get more forgiving.
 - **Adaptive coach (between sessions).** Each exercise has its own difficulty level. Easy, fast sessions raise it by 5%; sessions that needed adapting lower it.
 - **Dwell-to-press.** Any button activates by holding a fingertip near it for about 1.3 seconds, with a visible fill bar. No precise poke needed.
+- **Move the garden.** *Settings → Move garden* raises, lowers, or brings the planter closer in 5 cm steps, so it fits any chair, sofa or wheelchair. The ground stays on the real floor.
 - **Seated and small.** Everything happens over a lap-height planter, inside a two-foot bubble (the "airplane seat test").
 - **Pauses itself.** If your hand leaves view for 3 seconds, or the headset comes off, the session pauses, then resumes once your hand has been back in view for about a second.
 - **Many channels at once.** Spoken coaching *and* captions, large type, high-contrast glass panels, and audio chimes that rise in pitch with each rep.
@@ -159,6 +160,20 @@ Photograph something you love, such as a grandchild's toy, your favourite mug or
 3. Tap a scan to plant it. You can also drop in **any `.glb` file**.
 
 Keepsakes are stored in the headset's IndexedDB, so they survive restarts and work offline. Up to four are shown on the rim at once.
+
+---
+
+## Time of day
+
+The garden follows **your real clock**: misty pink mornings, bright days, warm sunsets, and starry nights where a garden lantern glows, fireflies drift over the meadow, crickets sing, and your seedlights and lanterns light up the planter. You can also pick a time yourself in *Settings → Sky*.
+
+| Sunset | Night |
+|---|---|
+| <img src="docs/screenshots/17-sunset.jpg" alt="Tend at sunset"> | <img src="docs/screenshots/16-night.jpg" alt="Tend at night with a lantern and fireflies"> |
+
+| Settings | Move the garden |
+|---|---|
+| <img src="docs/screenshots/19-settings.jpg" alt="Settings panel"> | <img src="docs/screenshots/18-move-garden.jpg" alt="Move the garden panel"> |
 
 ---
 
@@ -214,6 +229,8 @@ Every joint is reflected across the vertical plane through your head, with norma
 
 Everything is **procedural**: no downloaded models, textures or audio. The whole app is one small JavaScript bundle plus three.js.
 
+- **Time of day** that follows the local clock (morning, day, sunset, night), with a moonlit starfield, 90 drifting fireflies and a warm point-lit lantern after dark.
+- **Organic trees and pines** with vertex-shader wind sway.
 - **Physically based sky** (three.js `Sky`) with drifting clouds, and **image-based lighting** generated from it via PMREM. A sunrise animates the sky, sun, fog and environment light together.
 - **Soft shadows** from a sun light whose shadow frustum hugs the planter, where your attention is.
 - **26,000 wind-swept grass blades** in one instanced draw call, animated in the vertex shader with layered gusts.
@@ -246,7 +263,7 @@ Open the same URL in Chrome. A simulated hand produces the same 25-joint data th
 | **1–4** | Pinch thumb to index / middle / ring / little finger |
 | **H** | Switch hand · mouse wheel = depth |
 
-URL flags: `?demo` (an autopilot plays a whole session), `?demo=mirror`, `?fresh` (ignore saved progress), `?nointro`, `?camera3d=<url>` (open the keepsake drawer and connect).
+URL flags: `?mood=morning|day|sunset|night`, `?demo` (an autopilot plays a whole session), `?demo=mirror`, `?fresh` (ignore saved progress), `?nointro`, `?camera3d=<url>` (open the keepsake drawer and connect).
 
 ### Develop
 ```bash

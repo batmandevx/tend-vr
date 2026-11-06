@@ -74,6 +74,18 @@ export const VARIANTS = [
   { name: 'Lantern', petals: 4, len: 0.022, w: 0.016, tilt: 1.5, cup: 0.5, stem: 0.1, center: 0.012, glow: true, hueFix: 0.12, sat: 0.9, light: 0.62 },
 ];
 
+// Lighting presets; 'auto' picks one from the local clock.
+export const MOODS = {
+  morning: { elev: 9, az: 115, turbidity: 4.5, rayleigh: 2.4, mie: 0.008, clouds: 0.38, sun: 3.0, sunColor: '#ffd3b0', hemiSky: '#ffe2d2', hemiGround: '#5f7a4a', hemi: [0.35, 0.8], env: [0.35, 0.6], fog: '#e8d6cf', water: '#e9d3cc' },
+  day: { elev: 16, az: 140, turbidity: 3.2, rayleigh: 1.6, mie: 0.006, clouds: 0.32, sun: 3.2, sunColor: '#ffe6c4', hemiSky: '#ffe9cf', hemiGround: '#5b7a45', hemi: [0.35, 0.75], env: [0.35, 0.6], fog: '#b9cfdc', water: '#cfe3ea' },
+  sunset: { elev: 4.5, az: 300, turbidity: 5, rayleigh: 2.2, mie: 0.01, clouds: 0.4, sun: 3.0, sunColor: '#ffab66', hemiSky: '#ffc4a0', hemiGround: '#4e5f3c', hemi: [0.35, 0.65], env: [0.3, 0.5], fog: '#e9a98a', water: '#d6906f' },
+  night: { elev: -9, az: 150, turbidity: 1.2, rayleigh: 0.6, mie: 0.004, clouds: 0.18, sun: 1.6, sunColor: '#a9bfff', hemiSky: '#7186c4', hemiGround: '#2a3a30', hemi: [0.5, 0.75], env: [0.3, 0.3], fog: '#1b2740', water: '#3a4f7a', night: true },
+};
+export function moodForClock(d = new Date()) {
+  const h = d.getHours() + d.getMinutes() / 60;
+  return h >= 5 && h < 9.5 ? 'morning' : h < 16.5 ? 'day' : h < 19.5 ? 'sunset' : 'night';
+}
+
 const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
 
 export class Garden {
@@ -96,11 +108,21 @@ export class Garden {
     this._buildPools();
     this._buildHero();
     this.butterflies = new Butterflies(this.env);
+    this.fireflies = new AmbientFireflies(this.env);
     this.sparkles = new Sparkles(world);
+    this.mood = 'day';
     this.setDaylight(1);
   }
 
-  setFloorY(y) { this.floorY = y; this.env.position.y = y + 1.15; this._placeBedLegs(); this._repositionMeadow(); }
+  setFloorY(y) { this.floorY = y; this._applyComfort(); }
+  // Comfort offset: the garden (and UI) move as one; the ground stays on the real floor.
+  setComfort(dy, dz) { this.comfort = { y: dy, z: dz }; this._applyComfort(); }
+  _applyComfort() {
+    const c = this.comfort || { y: 0, z: 0 };
+    this.env.position.set(0, this.floorY + 1.15 - c.y, -c.z);
+    this._placeBedLegs(); this._repositionMeadow();
+  }
+  get localFloor() { return this.floorY - (this.comfort?.y || 0); }
 
   _buildLights() {
     this.hemi = new THREE.HemisphereLight('#ffe9cf', '#5b7a45', 1.8);
@@ -111,6 +133,18 @@ export class Garden {
     this.sun.shadow.bias = -0.0004; this.sun.shadow.normalBias = 0.01; this.sun.shadow.radius = 4;
     this.sun.target.position.set(0, BED.y, BED.z);
     this.world.add(this.hemi, this.sun, this.sun.target);
+    // a warm garden lantern beside the planter that lights up after dark
+    this.lantern = new THREE.PointLight('#ffc983', 0, 2.2, 1.6);
+    this.lantern.position.set(0.42, BED.y + 0.32, BED.z + 0.12);
+    const lg = new THREE.Group(); lg.position.copy(this.lantern.position);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.9, 8), new THREE.MeshStandardMaterial({ color: '#3b3128', roughness: 0.6, metalness: 0.4 }));
+    post.position.y = -0.47;
+    this.lanternBulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 12), new THREE.MeshBasicMaterial({ color: '#ffd9a0', toneMapped: false }));
+    this.lanternGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.17), new THREE.MeshBasicMaterial({ map: dotTexture(), color: '#ffbf70', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.026, 0.07, 6, 1, true), new THREE.MeshStandardMaterial({ color: '#2e2620', wireframe: true }));
+    lg.add(post, this.lanternBulb, this.lanternGlow, cage);
+    this.lanternGroup = lg;
+    this.world.add(this.lantern, lg);
   }
 
   _buildSky() {
@@ -121,22 +155,61 @@ export class Garden {
     u.cloudCoverage.value = 0.32; u.cloudDensity.value = 0.45; u.cloudSpeed.value = 0.00006; u.cloudScale.value = 0.00025;
     this.env.add(sky);
     this.sunDir = new THREE.Vector3();
+    this.moonDir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - 0.75, 2.5);
+    // stars (fade in at night)
+    const N = 1600, sp = new Float32Array(N * 3), sc2 = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const u1 = seeded(i * 3.1), u2 = seeded(i * 7.7 + 2), th = u1 * Math.PI * 2, y = 0.08 + u2 * 0.92, r = Math.sqrt(1 - y * y);
+      sp.set([Math.cos(th) * r * 140, y * 140, Math.sin(th) * r * 140], i * 3);
+      const b = 0.5 + seeded(i + 11) * 0.5, warm = seeded(i + 19);
+      sc2.set([b * (0.85 + 0.15 * warm), b * 0.9, b * (1.05 - 0.2 * warm)], i * 3);
+    }
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('color', new THREE.BufferAttribute(sc2, 3));
+    this.stars = new THREE.Points(sg, new THREE.PointsMaterial({ map: dotTexture(), size: 1.1, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+    this.env.add(this.stars);
+    this.moon = new THREE.Mesh(new THREE.SphereGeometry(3.2, 32, 16), new THREE.MeshBasicMaterial({ color: '#f4f1e6', fog: false, toneMapped: false, transparent: true }));
+    this.moon.position.copy(this.moonDir).multiplyScalar(120); this.moon.visible = false;
+    const moonGlow = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), new THREE.MeshBasicMaterial({ map: dotTexture(), color: '#9fb4ff', transparent: true, opacity: 0.35, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+    moonGlow.lookAt(0, 0, 0); moonGlow.position.set(0, 0, 0); this.moon.add(moonGlow); moonGlow.lookAt(new THREE.Vector3());
+    this.env.add(this.moon);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
   }
 
-  // daylight 0 = pre-dawn, 1 = golden hour
+  // Time of day follows the user's real clock, so evening sessions feel like evenings.
+  setMood(name) {
+    const M = MOODS[name] ? name : 'day';
+    this.mood = M; const m = MOODS[M];
+    const u = this.sky.material.uniforms;
+    u.turbidity.value = m.turbidity; u.rayleigh.value = m.rayleigh; u.mieCoefficient.value = m.mie;
+    u.cloudCoverage.value = m.clouds;
+    this.sun.color.set(m.sunColor); this.hemi.color.set(m.hemiSky); this.hemi.groundColor.set(m.hemiGround);
+    this.setDaylight(this.daylight ?? 1);
+  }
+
+  // daylight 0 = pre-dawn darkness, 1 = the chosen time of day
   setDaylight(k, rebuildEnv = true) {
     this.daylight = k;
-    const elev = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(-4, 16, k)), az = THREE.MathUtils.degToRad(this.sunAzimuth ?? 140);
+    const m = MOODS[this.mood || 'day'], night = m.night ? 1 : 0;
+    const elev = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(-6, m.elev, k)), az = THREE.MathUtils.degToRad(m.az);
     this.sunDir.setFromSphericalCoords(1, Math.PI / 2 - elev, az + Math.PI);
     this.sky.material.uniforms.sunPosition.value.copy(this.sunDir);
-    this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 3);
+    // at night the key light is the moon, high and cool
+    const lightDir = night ? this.moonDir : this.sunDir;
+    this.sun.position.copy(this.sun.target.position).addScaledVector(lightDir, 3);
     this.sun.position.y = Math.max(this.sun.position.y, BED.y + 0.9);
-    this.sun.intensity = 3.2 * THREE.MathUtils.smoothstep(k, 0.05, 0.8);
-    this.hemi.intensity = 0.35 + 0.75 * k;
-    this.scene.environmentIntensity = 0.35 + 0.6 * k;
-    if (this.pondMat) this.pondMat.uniforms.day.value = k;
-    if (this.scene.fog) this.scene.fog.color.setHSL(0.56, 0.35, 0.35 + 0.4 * k);
+    this.sun.intensity = m.sun * THREE.MathUtils.smoothstep(k, 0.05, 0.8);
+    this.hemi.intensity = m.hemi[0] + m.hemi[1] * k;
+    this.scene.environmentIntensity = m.env[0] + m.env[1] * k;
+    this.nightness = night * k + (1 - k) * 0.6;
+    if (this.pondMat) { this.pondMat.uniforms.day.value = night ? 0.35 : k; this.pondMat.uniforms.sky.value.set(m.water); }
+    if (this.scene.fog) this.scene.fog.color.set(m.fog).multiplyScalar(0.45 + 0.55 * k);
+    this.stars.material.opacity = THREE.MathUtils.clamp(this.nightness * 1.2 - 0.2, 0, 1);
+    this.moon.visible = !!night; this.moon.material.opacity = k;
+    if (this.lantern) {
+      const lit = night ? 0.25 + 0.75 * k : (this.mood === 'sunset' ? 0.35 * k : 0);
+      this.lantern.intensity = 1.1 * lit; this.lanternGlow.material.opacity = 0.55 * lit;
+      this.lanternBulb.material.color.set(lit > 0 ? '#ffd9a0' : '#8a7a68');
+    }
     if (rebuildEnv) this._rebuildEnv();
   }
   _rebuildEnv() {
@@ -245,27 +318,60 @@ export class Garden {
   }
 
   _buildTrees() {
-    const trunkGeo = new THREE.CylinderGeometry(0.07, 0.13, 1, 7); trunkGeo.translate(0, 0.5, 0);
-    const crownGeo = new THREE.IcosahedronGeometry(1, 1);
-    const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#6e4f37', roughness: 1 }), 46);
-    const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), 46 * 3);
-    let n = 0, c = 0;
-    for (let k = 0; k < 120 && n < 46; k++) {
-      const a = seeded(k * 3) * Math.PI * 2, r = 6.5 + seeded(k * 7) * 18;
+    // Organic broadleaf crowns (noise-displaced spheres) and a few pines, all swaying in the wind.
+    const crownGeo = new THREE.IcosahedronGeometry(1, 3);
+    const P = crownGeo.attributes.position;
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i);
+      const nz = Math.sin(v.x * 3.1 + 1.7) * Math.sin(v.y * 2.7 + 0.4) * Math.sin(v.z * 3.3 + 2.1);
+      v.multiplyScalar(1 + nz * 0.16 + (v.y < -0.3 ? -0.12 : 0)); P.setXYZ(i, v.x, v.y, v.z);
+    }
+    crownGeo.computeVertexNormals();
+    const pineGeo = new THREE.ConeGeometry(1, 1.6, 9, 1); pineGeo.translate(0, 0.8, 0);
+    const trunkGeo = new THREE.CylinderGeometry(0.06, 0.13, 1, 8); trunkGeo.translate(0, 0.5, 0);
+    const windMat = (opts) => {
+      const mat = new THREE.MeshStandardMaterial(opts);
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = this.grassUniforms.uTime;
+        sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            vec3 ip = instanceMatrix[3].xyz;
+            float sway = sin(uTime * 0.9 + ip.x * 0.21 + ip.z * 0.17) * 0.06 + sin(uTime * 2.3 + ip.z) * 0.015;
+            transformed.x += sway * (position.y + 1.0);
+            transformed.z += sway * 0.5 * (position.y + 1.0);
+          #endif`);
+      };
+      return mat;
+    };
+    const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#6b4c35', roughness: 1 }), 60);
+    const crowns = new THREE.InstancedMesh(crownGeo, windMat({ roughness: 0.85 }), 60 * 4);
+    const pines = new THREE.InstancedMesh(pineGeo, windMat({ roughness: 0.9, flatShading: true }), 60 * 3);
+    let n = 0, c = 0, pc = 0;
+    for (let k = 0; k < 160 && n < 60; k++) {
+      const a = seeded(k * 3) * Math.PI * 2, r = 6.5 + seeded(k * 7) * 20;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (Math.hypot((x - 3.2) / 1.5, z + 4.5) < 3.2) continue;
-      const hgt = 1.5 + seeded(k) * 2.2;
+      const isPine = seeded(k + 31) < 0.3;
+      const hgt = isPine ? 0.6 + seeded(k) * 0.6 : 1.4 + seeded(k) * 2.2;
       m4.compose(v.set(x, -1.15, z), q.identity(), sc.set(1, hgt, 1)); trunks.setMatrixAt(n++, m4);
-      const cr = 0.8 + seeded(k + 1) * 0.8;
-      const hue = 0.22 + seeded(k + 2) * 0.11, light = 0.3 + seeded(k + 4) * 0.14;
-      for (let b = 0; b < 3; b++) {
-        const off = v.set((seeded(k + b * 5) - 0.5) * cr, hgt + cr * (0.4 + b * 0.35), (seeded(k + b * 9) - 0.5) * cr);
-        m4.compose(off.add(new THREE.Vector3(x, -1.15, z)), q.setFromEuler(e.set(0, seeded(k + b) * 6, 0)), sc.setScalar(cr * (1 - b * 0.22)));
-        crowns.setMatrixAt(c, m4); crowns.setColorAt(c, col.setHSL(hue, 0.55, (light + b * 0.04) * 0.8)); c++;
+      if (isPine) {
+        const w = 0.7 + seeded(k + 5) * 0.5, H = 1.2 + seeded(k + 6) * 1.4;
+        for (let b = 0; b < 3; b++) {
+          m4.compose(v.set(x, -1.15 + hgt + b * H * 0.45, z), q.identity(), sc.set(w * (1 - b * 0.25), H * (0.8 - b * 0.12), w * (1 - b * 0.25)));
+          pines.setMatrixAt(pc, m4); pines.setColorAt(pc, col.setHSL(0.36 + seeded(k + b) * 0.04, 0.45, 0.17 + b * 0.03)); pc++;
+        }
+      } else {
+        const cr = 0.85 + seeded(k + 1) * 0.8;
+        const hue = 0.2 + seeded(k + 2) * 0.12, light = 0.26 + seeded(k + 4) * 0.12;
+        for (let b = 0; b < 4; b++) {
+          const off = v.set((seeded(k + b * 5) - 0.5) * cr * 1.1, hgt + cr * (0.35 + b * 0.28), (seeded(k + b * 9) - 0.5) * cr * 1.1);
+          m4.compose(off.add(new THREE.Vector3(x, -1.15, z)), q.setFromEuler(e.set(0, seeded(k + b) * 6, 0)), sc.set(cr * (1 - b * 0.18), cr * (0.85 - b * 0.12), cr * (1 - b * 0.18)));
+          crowns.setMatrixAt(c, m4); crowns.setColorAt(c, col.setHSL(hue, 0.5, light + b * 0.035)); c++;
+        }
       }
     }
-    trunks.count = n; crowns.count = c;
-    this.env.add(trunks, crowns);
+    trunks.count = n; crowns.count = c; pines.count = pc;
+    this.env.add(trunks, crowns, pines);
   }
 
   _buildBed() {
@@ -297,7 +403,7 @@ export class Garden {
     this._placeBedLegs();
   }
   _placeBedLegs() {
-    const h = Math.max(0.05, (BED.y - 0.03) - this.floorY);
+    const h = Math.max(0.05, (BED.y - 0.03) - this.localFloor);
     this.base.scale.set(1, h, 1);
     this.base.position.set(0, BED.y - 0.03 - h / 2, BED.z);
   }
@@ -335,9 +441,9 @@ export class Garden {
       return { pos: out.set(Math.cos(a) * r, BED.y, BED.z + Math.sin(a) * r), scale: 1, meadow: false };
     }
     const k = n - BED_SLOTS, r = 1.0 + Math.sqrt(k) * 0.15, a = k * golden;
-    return { pos: out.set(Math.cos(a) * r, this.floorY, Math.sin(a) * r - 0.2), scale: 2.6, meadow: true };
+    return { pos: out.set(Math.cos(a) * r, this.localFloor, Math.sin(a) * r - 0.2), scale: 2.6, meadow: true };
   }
-  _repositionMeadow() { for (const p of this.plants) if (p.meadow) { p.pos.y = this.floorY; this._writePlant(p); } }
+  _repositionMeadow() { for (const p of this.plants) if (p.meadow) { p.pos.y = this.localFloor; this._writePlant(p); } }
 
   addPlant(variant, hue, seed, animate = true) {
     const n = this.plants.length, V = VARIANTS[variant];
@@ -486,10 +592,42 @@ export class Garden {
     }
     this._flagAll();
     this.butterflies.update(dt, this.time);
+    for (const b of this.butterflies.list) b.g.visible = (this.nightness || 0) < 0.5;
+    this.fireflies.update(dt, this.time, this.nightness || 0);
+    this.halos.material.opacity = 0.3 + 0.45 * (this.nightness || 0);
+    if (camera && this.lanternGlow) this.lanternGlow.lookAt(camera.getWorldPosition(v.clone()));
     this.sparkles.update(dt);
   }
 
   setMR(on) { this.env.visible = !on; this.scene.environment = on ? null : this.envRT?.texture; }
+}
+
+// Ambient fireflies that drift over the meadow after dark.
+class AmbientFireflies {
+  constructor(parent) {
+    this.N = 90; this.base = new Float32Array(this.N * 3); this.pos = new Float32Array(this.N * 3); this.col = new Float32Array(this.N * 3);
+    for (let i = 0; i < this.N; i++) {
+      const a = seeded(i * 5.3) * Math.PI * 2, r = 0.5 + Math.pow(seeded(i * 2.1), 0.7) * 5;
+      this.base.set([Math.cos(a) * r, -1.0 + seeded(i + 3) * 1.4, Math.sin(a) * r - 0.6], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    this.points = new THREE.Points(g, new THREE.PointsMaterial({ map: dotTexture(), size: 0.06, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    this.points.frustumCulled = false; parent.add(this.points);
+  }
+  update(dt, t, night) {
+    this.points.visible = night > 0.05;
+    if (!this.points.visible) return;
+    for (let i = 0; i < this.N; i++) {
+      const s = i * 1.37;
+      this.pos[i * 3] = this.base[i * 3] + Math.sin(t * 0.3 + s) * 0.35;
+      this.pos[i * 3 + 1] = this.base[i * 3 + 1] + Math.sin(t * 0.5 + s * 2) * 0.15;
+      this.pos[i * 3 + 2] = this.base[i * 3 + 2] + Math.cos(t * 0.27 + s) * 0.35;
+      const tw = Math.max(0, Math.sin(t * (1.3 + (i % 7) * 0.2) + s * 3)) ** 3 * night;
+      this.col[i * 3] = 1.0 * tw; this.col[i * 3 + 1] = 0.9 * tw; this.col[i * 3 + 2] = 0.45 * tw;
+    }
+    this.points.geometry.attributes.position.needsUpdate = true; this.points.geometry.attributes.color.needsUpdate = true;
+  }
 }
 
 // A few butterflies drifting around the garden.
