@@ -262,6 +262,9 @@ Open the same URL in Chrome. A simulated hand produces the same 25-joint data th
 | **T** | Turn palm up |
 | **1–4** | Pinch thumb to index / middle / ring / little finger |
 | **H** | Switch hand · mouse wheel = depth |
+| **Drag** (empty space, or right-drag) | Look around |
+| **W A S D** / arrows · **Q**/**E** | Walk around the meadow / turn · **Shift** to go faster |
+| **R** | Sit back down at the planter |
 
 URL flags: `?mood=morning|day|sunset|night`, `?demo` (an autopilot plays a whole session), `?demo=mirror`, `?fresh` (ignore saved progress), `?nointro`, `?camera3d=<url>` (open the keepsake drawer and connect).
 

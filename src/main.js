@@ -139,6 +139,60 @@ class App {
     this.garden.setFloorY(-h);
     this.camera.position.set(0, h + 0.12, 0.32);
     this.camera.lookAt(0, h - 0.2, -0.52);
+    // remember the seat so free look can return to it
+    this.seat = { pos: this.camera.position.clone(), pitch: Math.atan2(-0.32, 0.84) };
+    if (this.look) this.sitDown();
+  }
+  // ---- desktop free look: drag to look around, WASD / arrows to walk, R to sit back down ----
+  _initLook() {
+    const el = this.renderer.domElement;
+    this.look = { yaw: 0, pitch: this.seat.pitch, pos: this.seat.pos.clone(), drag: null, keys: new Set(), active: false };
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    addEventListener('pointermove', (e) => {
+      const d = this.look.drag; if (!d) return;
+      const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
+      if (!d.moved && Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) < 4) return;
+      d.moved = true; this.look.active = true;
+      this.look.yaw -= dx * 0.0042;
+      this.look.pitch = THREE.MathUtils.clamp(this.look.pitch - dy * 0.0042, -1.35, 1.35);
+    });
+    addEventListener('pointerup', () => { this.look.drag = null; el.style.cursor = ''; });
+    const walkKeys = ['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'];
+    addEventListener('keydown', (e) => {
+      if (/INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'r') return this.sitDown();
+      if (walkKeys.includes(k)) { this.look.keys.add(k); if (k.startsWith('arrow')) e.preventDefault(); }
+    });
+    addEventListener('keyup', (e) => this.look.keys.delete(e.key.toLowerCase()));
+    addEventListener('blur', () => this.look.keys.clear());
+  }
+  startLook(e) {
+    this.look.drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false };
+    this.renderer.domElement.style.cursor = 'grabbing';
+  }
+  sitDown() {
+    const L = this.look; if (!L) return;
+    L.yaw = 0; L.pitch = this.seat.pitch; L.pos.copy(this.seat.pos); L.active = false;
+    this.camera.position.copy(this.seat.pos); this.camera.rotation.set(this.seat.pitch, 0, 0, 'YXZ');
+  }
+  updateLook(dt) {
+    const L = this.look, k = L.keys;
+    const fwd = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
+    const side = (k.has('d') ? 1 : 0) - (k.has('a') ? 1 : 0);
+    const turn = (k.has('arrowleft') || k.has('q') ? 1 : 0) - (k.has('arrowright') || k.has('e') ? 1 : 0);
+    if (fwd || side || turn) L.active = true;
+    if (!L.active) return;
+    L.yaw += turn * 1.6 * dt;
+    const speed = (k.has('shift') ? 4.5 : 1.6) * dt;
+    const sy = Math.sin(L.yaw), cy = Math.cos(L.yaw);
+    L.pos.x += (-sy * fwd + cy * side) * speed;
+    L.pos.z += (-cy * fwd - sy * side) * speed;
+    // stay inside the meadow
+    const r = Math.hypot(L.pos.x, L.pos.z), max = 16;
+    if (r > max) { L.pos.x *= max / r; L.pos.z *= max / r; }
+    this.camera.position.copy(L.pos);
+    this.camera.rotation.set(L.pitch, L.yaw, 0, 'YXZ');
   }
   _initHands() {
     this.real = { left: new HandState('left'), right: new HandState('right') };
@@ -178,11 +232,14 @@ class App {
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, this.camera);
       const hits = ray.intersectObjects([this.panel.mesh, this.hud.mesh].filter((m) => m.visible));
-      if (hits.length && hits[0].uv) {
+      if (e.button === 0 && hits.length && hits[0].uv) {
         const p = hits[0].object.userData.panel, b = p.buttonAtUV(hits[0].uv.x, hits[0].uv.y);
-        if (b) this.onButton(b.id, p);
+        if (b) return this.onButton(b.id, p);
       }
+      // anything else (empty space, or right-drag anywhere) looks around
+      if (!params.has('demo') && !params.has('capture')) this.startLook(e);
     });
+    this._initLook();
     this.simHands = new SimHands(this);
     if (params.has('demo')) {
       this.simHands.autopilot = new Autopilot(this.simHands, this);
@@ -630,7 +687,7 @@ class App {
     if (xr && frame) {
       if (this.needsRecenter && this.recenter()) this.needsRecenter = false;
       readXRHands(frame, this.renderer.xr.getReferenceSpace(), this.real, now);
-    } else this.simHands.update(dt);
+    } else { if (this.look && !params.has('demo') && !params.has('capture')) this.updateLook(dt); this.simHands.update(dt); }
 
     const H = this.hands;
     const mh = this.measureHand();
